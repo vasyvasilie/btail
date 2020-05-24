@@ -5,10 +5,24 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"regexp"
 	"time"
+
+	"gopkg.in/yaml.v2"
 )
+
+const defaultParserName = "parsers.yaml"
+
+type UserParser struct {
+	Name   string `yaml:"name"`
+	Regexp string `yaml:"regexp"`
+	Layout string `yaml:"layout"`
+}
+type UserParsers struct {
+	Parsers []UserParser `yaml:"parsers"`
+}
 
 type logParser struct {
 	r *regexp.Regexp
@@ -26,13 +40,32 @@ func listParsers(parsers logParsers) {
 
 }
 
-func createParsers(secs uint) logParsers {
+func createParsers(secs uint, configPath string) logParsers {
 	// parsers here
 	ps := logParsers{
 		"nginx": logParser{
 			r: regexp.MustCompile(`\d{2}\/[a-zA-Z]{3}\/\d{4}:\d{2}:\d{2}:\d{2}\ \+\d{4}`),
 			l: "02/Jan/2006:15:04:05 -0700",
 		},
+	}
+
+	data, err := ioutil.ReadFile(configPath)
+	if err != nil && configPath != defaultParserName {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	userParsers := UserParsers{}
+	err = yaml.Unmarshal([]byte(data), &userParsers)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	for i := range userParsers.Parsers {
+		ps[userParsers.Parsers[i].Name] = logParser{
+			r: regexp.MustCompile(userParsers.Parsers[i].Regexp),
+			l: userParsers.Parsers[i].Layout,
+		}
 	}
 
 	// add after to all parsers
@@ -129,9 +162,10 @@ func main() {
 	lfile := flag.String("f", "access.log", "path to file")
 	ltype := flag.String("t", "nginx", "log format")
 	bufSize := flag.Int("b", 16384, "buffer for read (bytes)") // 16384
+	parsersFile := flag.String("p", defaultParserName, "file with dynamic parsers")
 	flag.Parse()
 
-	parsers := createParsers(*secs)
+	parsers := createParsers(*secs, *parsersFile)
 	parser, ok := parsers[*ltype]
 	if !ok {
 		listParsers(parsers)
@@ -153,6 +187,10 @@ func main() {
 	for {
 		_, err = f.ReadAt(buf, int64(offsetCur))
 		l, r, e := parser.findAll(buf)
+		if e == 0 && r == 0 && l == 0 && offsetCur == 0 {
+			fmt.Println("bad parser?")
+			os.Exit(1)
+		}
 		if e == 1 && r == 1 && l == 1 {
 			parser.printFromOffset(f, offsetCur, *bufSize)
 			break
