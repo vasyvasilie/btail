@@ -116,7 +116,8 @@ func (p logParser) printFromOffset(f *os.File, currOffset int, bufSize int) {
 				if len(splitted[i]) == 0 {
 					continue
 				}
-				timeInStr, err := time.Parse(p.l, p.r.FindString(string(splitted[i])))
+				timeInStr, err := time.ParseInLocation(p.l, p.r.FindString(string(splitted[i])), time.Now().Location())
+				timeInStr = tryAdoptLogTime(timeInStr)
 				if err != nil {
 					// some parts of buffer cannot be time parsed
 					continue
@@ -128,6 +129,9 @@ func (p logParser) printFromOffset(f *os.File, currOffset int, bufSize int) {
 			}
 			toFound := []byte(p.t.Format(p.l))
 			toFoundIndex := bytes.Index(buf, toFound)
+			if toFoundIndex == -1 {
+				break
+			}
 			lastnl := bytes.LastIndex(buf[:toFoundIndex], nl)
 			fmt.Print(string(buf[lastnl+1:]))
 			currOffset = currOffset + bufSize
@@ -139,11 +143,27 @@ func (p logParser) printFromOffset(f *os.File, currOffset int, bufSize int) {
 	}
 }
 
+func tryAdoptLogTime(foundedTime time.Time) time.Time {
+	currTime := time.Now()
+	var appendYear, appendMonth, appendDay int
+	if foundedTime.Year() == 0 {
+		appendYear = currTime.Year()
+	}
+	if foundedTime.Month() == 0 {
+		appendMonth = int(currTime.Month())
+	}
+	if foundedTime.Day() == 0 {
+		appendMonth = currTime.Day()
+	}
+	return foundedTime.AddDate(appendYear, appendMonth, appendDay)
+}
+
 func (p logParser) findAll(buf []byte) (int, int, int) {
 	var l, r, e int
 	founds := p.r.FindAll(buf, -1)
 	for _, found := range founds {
-		timeInStr, _ := time.Parse(p.l, string(found))
+		timeInStr, _ := time.ParseInLocation(p.l, string(found), time.Now().Location())
+		timeInStr = tryAdoptLogTime(timeInStr)
 		if timeInStr.After(p.t) {
 			l = 1
 		}
@@ -183,7 +203,6 @@ func main() {
 	offsetMax := getFileSize(f)
 	offsetCur := int(offsetMax / 2)
 	buf := make([]byte, *bufSize)
-
 	for {
 		_, err = f.ReadAt(buf, int64(offsetCur))
 		l, r, e := parser.findAll(buf)
@@ -204,6 +223,9 @@ func main() {
 		} else if l == 1 && r == 1 && offsetCur == 0 {
 			parser.printFromOffset(f, offsetCur, *bufSize)
 			break
+		} else if l == 1 && offsetCur == 0 {
+			parser.printFromOffset(f, offsetCur, *bufSize)
+			break
 		} else if r == 1 {
 			if offsetCur == 0 {
 				break
@@ -213,9 +235,6 @@ func main() {
 				offsetNew = 0
 			}
 		} else if l == 1 {
-			if offsetCur == 0 {
-				break
-			}
 			offsetNew = offsetCur - (offsetMax-offsetCur)/2
 			if offsetCur == offsetNew {
 				offsetNew = 0
