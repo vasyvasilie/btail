@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"regexp"
+	"sort"
 	"time"
 
 	"gopkg.in/yaml.v2"
@@ -33,8 +34,14 @@ type logParser struct {
 type logParsers map[string]logParser
 
 func listParsers(parsers logParsers) {
+	keys := make([]string, 0, len(parsers))
+	for k := range parsers {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
 	fmt.Println("available formats:")
-	for i := range parsers {
+	for _, i := range keys {
 		fmt.Println("name:", i, "format:", parsers[i].l)
 	}
 
