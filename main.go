@@ -117,11 +117,11 @@ func (p logParser) printFromOffset(f *os.File, currOffset int, bufSize int) {
 					continue
 				}
 				timeInStr, err := time.ParseInLocation(p.l, p.r.FindString(string(splitted[i])), time.Now().Location())
-				timeInStr = tryAdoptLogTime(timeInStr)
 				if err != nil {
 					// some parts of buffer cannot be time parsed
 					continue
 				}
+				timeInStr = tryAdoptLogTime(timeInStr)
 				if timeInStr.Equal(p.t) || timeInStr.After(p.t) {
 					p.t = timeInStr
 					break
@@ -162,7 +162,12 @@ func (p logParser) findAll(buf []byte) (int, int, int) {
 	var l, r, e int
 	founds := p.r.FindAll(buf, -1)
 	for _, found := range founds {
-		timeInStr, _ := time.ParseInLocation(p.l, string(found), time.Now().Location())
+		timeInStr, err := time.ParseInLocation(p.l, string(found), time.Now().Location())
+		if err != nil {
+			// never seen this error, so will print
+			fmt.Println(err)
+			os.Exit(1)
+		}
 		timeInStr = tryAdoptLogTime(timeInStr)
 		if timeInStr.After(p.t) {
 			l = 1
@@ -181,7 +186,7 @@ func main() {
 	secs := flag.Uint("n", 300, "seconds")
 	lfile := flag.String("f", "access.log", "path to file")
 	ltype := flag.String("t", "nginx", "log format")
-	bufSize := flag.Int("b", 16384, "buffer for read (bytes)") // 16384
+	bufSize := flag.Int("b", 4096, "buffer for read (bytes)") // 16384
 	parsersFile := flag.String("p", defaultParserName, "file with dynamic parsers")
 	flag.Parse()
 
@@ -202,8 +207,9 @@ func main() {
 	var offsetNew int
 	offsetMax := getFileSize(f)
 	offsetCur := int(offsetMax / 2)
-	buf := make([]byte, *bufSize)
+	var buf []byte
 	for {
+		buf = make([]byte, *bufSize)
 		_, err = f.ReadAt(buf, int64(offsetCur))
 		l, r, e := parser.findAll(buf)
 		if e == 0 && r == 0 && l == 0 && offsetCur == 0 {
@@ -227,6 +233,10 @@ func main() {
 			parser.printFromOffset(f, offsetCur, *bufSize)
 			break
 		} else if r == 1 {
+			if offsetCur > offsetMax-*bufSize {
+				parser.printFromOffset(f, offsetCur, *bufSize)
+				break
+			}
 			if offsetCur == 0 {
 				break
 			}
