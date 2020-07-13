@@ -44,7 +44,7 @@ func createParsers(secs uint, configPath string) logParsers {
 	// parsers here
 	ps := logParsers{
 		"nginx": logParser{
-			r: regexp.MustCompile(`\d{2}\/[a-zA-Z]{3}\/\d{4}:\d{2}:\d{2}:\d{2}\ \+\d{4}`),
+			r: regexp.MustCompile(`\d{2}\/[a-zA-Z]{3}\/\d{4}:\d{2}:\d{2}:\d{2}\s{1}[\+|\-]\d{4}`),
 			l: "02/Jan/2006:15:04:05 -0700",
 		},
 	}
